@@ -1,6 +1,6 @@
 # OutlineMCP Agent Documentation
 
-This repository contains an MCP (Model Context Protocol) server implementation for Netwrix's Outline documentation system. The server provides a bridge between Cursor's AI capabilities and Outline's documentation API.
+This repository contains an MCP (Model Context Protocol) server implementation for Outline documentation system. The server provides a bridge between Cursor's AI capabilities and Outline's documentation API.
 
 ## Project Structure
 
@@ -32,7 +32,7 @@ Namespaces: Follow folder structure and project organization.
 Async: Use async/await throughout; name async methods with Async suffix.
 Nullable: Use nullable reference types (#nullable enable).
 Clean Architecture Rules
-No project may reference a project “up” the architecture:
+No project may reference a project "up" the architecture:
 Domain has no dependencies.
 Application depends only on Domain.
 Infrastructure depends on Application and Domain.

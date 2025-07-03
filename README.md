@@ -10,12 +10,12 @@ A C# Model Context Protocol (MCP) server that integrates with Outline API to hel
 - **Web-Based Server**: Runs as an HTTP server on localhost:3001
 - **Documentation Access**: Retrieves and converts Outline documents to markdown format
 - **Search Capabilities**: Search through Outline documents using the Outline search API
-- **Netwrix Application Focus**: Specialized tools for Change Tracker, Password Secure, and Privileged Secure
+- **Documentation Focus**: Specialized tools for searching and accessing documentation
 
 ## Prerequisites
 
 - .NET 8.0 SDK or later
-- Outline instance with API access (XChange Wiki)
+- Outline instance with API access
 - API token for authentication
 - Cursor IDE (for MCP integration)
 
@@ -35,20 +35,20 @@ Set the following environment variables:
 
 ```bash
 # Windows
-set OUTLINE_BASE_URL=https://xchange.netwrix.com
+set OUTLINE_BASE_URL=https://your-outline-instance.com
 set OUTLINE_API_TOKEN=your-api-token
 
 # Linux/Mac
-export OUTLINE_BASE_URL=https://xchange.netwrix.com
+export OUTLINE_BASE_URL=https://your-outline-instance.com
 export OUTLINE_API_TOKEN=your-api-token
 ```
 
 **Note**: For local development, you can copy `appsettings.json.template` to `appsettings.json` and modify the settings as needed. The `appsettings.json` file is ignored by git for security reasons.
 
-### 3. Get XChange Wiki API Token
+### 3. Get Outline API Token
 
-1. Go to [XChange Wiki](https://xchange.netwrix.com)
-2. Log in with your Netwrix account
+1. Go to your Outline instance
+2. Log in with your account
 3. Navigate to Settings → API Tokens
 4. Click "Create API token"
 5. Give it a name (e.g., "MCP Server")
@@ -94,23 +94,23 @@ Download and install Cursor from [https://cursor.sh](https://cursor.sh)
 
 ### 2. Setup Environment Variables
 
-Set your environment variables before configuring Cursor:
+Set your environment variables before starting the MCP server:
 
 ```bash
 # Windows
-set OUTLINE_BASE_URL=https://xchange.netwrix.com
+set OUTLINE_BASE_URL=https://your-outline-instance.com
 set OUTLINE_API_TOKEN=your-api-token
 
 # Linux/Mac
-export OUTLINE_BASE_URL=https://xchange.netwrix.com
+export OUTLINE_BASE_URL=https://your-outline-instance.com
 export OUTLINE_API_TOKEN=your-api-token
 ```
 
-**Note**: You can also set these in the MCP configuration file (recommended approach).
+**Note**: These environment variables must be set when starting the MCP server, not in the Cursor configuration.
 
 ### 3. Configure MCP Server in Cursor
 
-**Important**: This MCP server now uses **stdio transport** by default, which is what Cursor expects. You don't need to run the HTTP server separately.
+**Important**: This MCP server uses **HTTP transport** and runs as a web server on localhost:3001. Cursor connects to it via HTTP.
 
 1. **Create MCP Configuration File**:
    - **Project-specific**: Create `.cursor/mcp.json` in your project directory
@@ -120,41 +120,26 @@ export OUTLINE_API_TOKEN=your-api-token
 
 ```json
 {
-  "mcpServers": {
-    "netwrix-outline": {
-      "command": "dotnet",
-      "args": ["run", "--project", "/path/to/OutlineMCP"],
-      "env": {
-        "OUTLINE_BASE_URL": "https://xchange.netwrix.com",
-        "OUTLINE_API_TOKEN": "your_api_token_here"
-      }
+ "mcpServers": {
+    "OutlineWiki": {
+      "url": "http://localhost:3001"
     }
   }
 }
 ```
 
-Replace `/path/to/OutlineMCP` with the actual path to this project directory.
+**Note**: Make sure the MCP server is running on localhost:3001 before configuring Cursor.
 
-### 4. Alternative: HTTP Mode (Advanced)
+### 4. Starting the HTTP Server
 
-If you prefer to run the server in HTTP mode:
+The MCP server runs as an HTTP server. You need to start it before configuring Cursor:
 
 1. **Start the HTTP server**:
    ```bash
-   dotnet run --http
+   dotnet run
    ```
 
-2. **Configure for HTTP mode**:
-   ```json
-   {
-     "mcpServers": {
-       "netwrix-outline": {
-         "command": "npx",
-         "args": ["-y", "@modelcontextprotocol/server-http", "http://localhost:3001/mcp"]
-       }
-     }
-   }
-   ```
+The server will start and listen for MCP requests on `http://localhost:3001`.
 
 ### 5. Restart Cursor
 
@@ -164,7 +149,7 @@ After configuring the MCP server, restart Cursor for the changes to take effect.
 
 1. Ensure the MCP server is running on localhost:3001
 2. Open Cursor and check that the MCP server appears in the available tools
-3. You can test the connection by asking questions about Netwrix applications
+3. You can test the connection by asking questions about documentation
 
 ## Using the MCP Server in Cursor
 
@@ -174,17 +159,17 @@ Once configured, you should see the MCP server available in Cursor. You can veri
 
 1. Opening the Command Palette (`Ctrl+Shift+P`)
 2. Typing "MCP" to see available MCP commands
-3. The server should appear as "netwrix-outline"
+3. The server should appear as "outline-mcp"
 
 ### 2. Query Examples
 
-You can now ask Cursor questions about Netwrix applications:
+You can now ask Cursor questions about documentation:
 
 ```
-"Search for Change Tracker installation guide"
-"Find Password Secure configuration documentation"
-"Look up Privileged Secure troubleshooting steps"
-"Search the XChange Wiki for Change Tracker best practices"
+"Search for installation guides"
+"Find configuration documentation"
+"Look up troubleshooting steps"
+"Search the wiki for best practices"
 ```
 
 ### 3. Available Tools in Cursor
@@ -195,12 +180,10 @@ The following tools are available through the MCP server:
 |------|-------------|-------|
 | `search_documents` | General search across all documentation | "Search for installation guides" |
 | `searchWiki` | Search the knowledge base for specific terms | "Search wiki for troubleshooting" |
-| `search_change_tracker` | Change Tracker specific search (optionally accepts collectionId) | "Search Change Tracker documentation" |
-| `search_password_secure` | Password Secure specific search | "Search Password Secure guides" |
-| `search_privileged_secure` | Privileged Secure specific search | "Search Privileged Secure docs" |
+| `search_specific_app` | Application specific search (optionally accepts collectionId) | "Search application documentation" |
 | `get_document` | Get specific document by ID | "Get document with ID abc123" |
 | `list_collections` | List available collections | "Show all documentation collections" |
-| `list_documents` | List documents in a collection | "List documents in Change Tracker collection" |
+| `list_documents` | List documents in a collection | "List documents in collection" |
 
 ## MCP Protocol Support
 
@@ -216,22 +199,20 @@ This server implements the following MCP methods:
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `search_documents` | Search for Netwrix application documentation and guides in the knowledge base | `query`, `collectionId` (optional), `limit` (optional) |
-| `searchWiki` | Search the Netwrix knowledge base for specific terms across all application documentation | `term`, `limit` (optional) |
-| `search_change_tracker` | Search specifically for Change Tracker application documentation and guides | `query`, `limit` (optional) |
-| `search_password_secure` | Search specifically for Password Secure application documentation and guides | `query`, `limit` (optional) |
-| `search_privileged_secure` | Search specifically for Privileged Secure application documentation and guides | `query`, `limit` (optional) |
-| `get_document` | Get a specific Netwrix application document by ID | `id` |
-| `list_collections` | List available Netwrix application documentation collections | `limit` (optional) |
-| `list_documents` | List documents in a specific Netwrix application collection | `collectionId`, `limit` (optional) |
+| `search_documents` | Search for application documentation and guides in the knowledge base | `query`, `collectionId` (optional), `limit` (optional) |
+| `searchWiki` | Search the knowledge base for specific terms across all application documentation | `term`, `limit` (optional) |
+| `search_specific_app` | Search specifically for application documentation and guides | `query`, `limit` (optional) |
+| `get_document` | Get a specific application document by ID | `id` |
+| `list_collections` | List available application documentation collections | `limit` (optional) |
+| `list_documents` | List documents in a specific application collection | `collectionId`, `limit` (optional) |
 
 ### Available Resources
 
 | Resource | Description |
 |----------|-------------|
-| `outline://collections` | List of all accessible Netwrix application documentation collections |
-| `outline://recent-documents` | Recently updated Netwrix application documentation and guides |
-| `outline://starred-documents` | Important Netwrix application documentation marked as starred |
+| `outline://collections` | List of all accessible application documentation collections |
+| `outline://recent-documents` | Recently updated application documentation and guides |
+| `outline://starred-documents` | Important application documentation marked as starred |
 
 ## Configuration
 
@@ -291,7 +272,7 @@ This server is designed to be **read-only** and does not support any write opera
 1. **Authentication Failed**
    - Verify your API token is correct
    - Ensure the token has the necessary read permissions
-   - Check that the XChange Wiki URL is correct
+   - Check that the Outline URL is correct
 
 2. **Server Not Starting**
    - Check that port 3001 is available
@@ -300,7 +281,7 @@ This server is designed to be **read-only** and does not support any write opera
 
 3. **Network Errors**
    - Check your internet connection
-   - Verify the XChange Wiki URL is correct
+   - Verify the Outline URL is correct
    - Ensure your firewall allows HTTPS connections
 
 4. **Cursor MCP Integration Issues**
@@ -325,7 +306,7 @@ This server is designed to be **read-only** and does not support any write opera
 
 5. **Tool Execution Errors**
    - Check server logs for detailed error messages
-   - Verify the XChange Wiki API is accessible
+   - Verify the Outline API is accessible
    - Ensure the search queries are properly formatted
 
 ### Debugging MCP Server
