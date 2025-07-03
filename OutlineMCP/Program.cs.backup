@@ -1,0 +1,19 @@
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using ModelContextProtocol.Server;
+using OutlineMCP.Services;
+using System.ComponentModel;
+
+var builder = Host.CreateEmptyApplicationBuilder(settings: null);
+builder.Services
+    .AddMcpServer()
+    .WithHttpTransport()
+    .WithPrompts<OutlinePrompts>()
+    #.WithResources<MonkeyResources>()
+    .WithTools<OutlineTools>();
+
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<MonkeyService>();
+builder.Services.AddSingleton<MonkeyLocationService>();
+
+await builder.Build().RunAsync();

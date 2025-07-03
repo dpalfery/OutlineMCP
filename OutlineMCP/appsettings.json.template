@@ -1,0 +1,19 @@
+{
+  "Outline": {
+    "BaseUrl": "https://xchange.netwrix.com/"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft": "Warning"
+    }
+  },
+  "Kestrel": {
+    "Endpoints": {
+      "Http": {
+        "Url": "http://localhost:5000"
+      }
+    }
+  },
+  "AllowedHosts": "*"
+} 
