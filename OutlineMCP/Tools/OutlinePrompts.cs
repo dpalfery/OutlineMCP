@@ -71,7 +71,7 @@ Include:
 - Product technical information
 - Product Application information
 - Product SaaS information
-- product diagrams
+- Product diagrams
 
 Return product information.";
     }
