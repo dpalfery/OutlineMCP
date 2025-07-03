@@ -70,7 +70,7 @@ Include:
 - Product support information
 - Product technical information
 - Product Application information
-- product SaaS information
+- Product SaaS information
 - product diagrams
 
 Return product information.";
