@@ -56,4 +56,23 @@ Include:
 
 Return step-by-step troubleshooting guidance.";
     }
+
+     [McpServerPrompt, Description("Creates a query to find product information in a company wiki")]
+    public static string FindProductInformation(string query)
+    {
+        return $@"
+Search the Outline documentation for product information about: {query}
+
+Include:
+- Product features
+- Product specifications
+- Product documentation
+- Product support information
+- Product technical information
+- Product Application information
+- Product SaaS information
+- Product diagrams
+
+Return product information.";
+    }
 }

@@ -79,7 +79,7 @@ public class OutlineTools
 
             _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
             
-            var searchUrl = $"{baseUrl}api/wiki.search";
+            var searchUrl = $"{baseUrl}api/documents.search";
             var searchData = new { query, limit };
             
             var response = await _httpClient.PostAsJsonAsync(searchUrl, searchData, JsonOptions);
