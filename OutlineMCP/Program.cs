@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using ModelContextProtocol.AspNetCore;
 using OutlineMCP.Services;
+using OutlineMCP.Middleware;
 using System.ComponentModel;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,6 +24,9 @@ builder.Logging
 // Register Outline services
 builder.Services.AddOutlineServices(builder.Configuration);
 
+// Add security headers
+builder.Services.AddSecurityHeaders(builder.Configuration);
+
 // Add MCP server with SSE transport
 builder.Services
     .AddMcpServer()
@@ -32,6 +36,9 @@ builder.Services
     .WithResourcesFromAssembly();
 
 var app = builder.Build();
+
+// Add security headers middleware
+app.UseSecurityHeaders();
 
 app.MapMcp();
 
