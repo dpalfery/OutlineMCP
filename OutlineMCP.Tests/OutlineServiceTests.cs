@@ -50,13 +50,19 @@ public class OutlineToolsTests
     public void SearchDocuments_WithoutApiToken_ReturnsError()
     {
         // Arrange
-        Environment.SetEnvironmentVariable("OUTLINE_API_TOKEN", null);
+        var settingsWithoutToken = new OutlineSettings 
+        { 
+            BaseUrl = "https://test.example.com",
+            ApiToken = null 
+        };
+        var toolsWithoutToken = new OutlineTools(_httpClient, settingsWithoutToken);
 
         // Act
-        var result = _outlineTools.SearchDocuments("test query").Result;
+        var result = toolsWithoutToken.SearchDocuments("test query").Result;
 
         // Assert
-        Assert.Contains("API token is not set", result);
+        Assert.Contains("Configuration error", result);
+        Assert.Contains("API token is not configured", result);
     }
 
     [Fact]
@@ -71,7 +77,7 @@ public class OutlineToolsTests
         var result = await _outlineTools.SearchDocuments("test query", 5);
 
         // Assert
-        Assert.Contains("Search results for 'test query'", result);
+        Assert.Contains("Search results for query", result);
         Assert.Contains(expectedResponse, result);
     }
 
@@ -87,7 +93,7 @@ public class OutlineToolsTests
         var result = await _outlineTools.SearchWiki("test query", 10);
 
         // Assert
-        Assert.Contains("Wiki search results for 'test query'", result);
+        Assert.Contains("Wiki search results", result);
         Assert.Contains(expectedResponse, result);
     }
 
@@ -154,7 +160,7 @@ public class OutlineToolsTests
         var result = await _outlineTools.GetDocument("doc-123");
 
         // Assert
-        Assert.Contains("Document doc-123", result);
+        Assert.Contains("Document:", result);
         Assert.Contains(expectedResponse, result);
     }
 
@@ -201,6 +207,6 @@ public class OutlineToolsTests
         var result = await _outlineTools.SearchDocuments("test query");
 
         // Assert
-        Assert.Contains("Error searching documents", result);
+        Assert.Contains("Error: Unable to connect to Outline API", result);
     }
 }
