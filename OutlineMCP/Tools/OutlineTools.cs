@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+using System.Web;
 using ModelContextProtocol.Server;
 using OutlineMCP.Settings;
 
@@ -18,10 +20,131 @@ public class OutlineTools
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    // Security constants
+    private const int MaxQueryLength = 1000;
+    private const int MaxDocumentIdLength = 255;
+    private const int MaxLimitValue = 100;
+    private static readonly Regex ValidDocumentIdPattern = new(@"^[a-zA-Z0-9\-_]{1,255}$", RegexOptions.Compiled);
+    private static readonly Regex SafeQueryPattern = new(@"^[^<>""';&|`$]*$", RegexOptions.Compiled);
+
     public OutlineTools(HttpClient httpClient, OutlineSettings settings)
     {
         _httpClient = httpClient;
         _settings = settings;
+    }
+
+    /// <summary>
+    /// Validates and sanitizes input parameters to prevent injection attacks
+    /// </summary>
+    private static string ValidateAndSanitizeQuery(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            throw new ArgumentException("Query cannot be null or empty", nameof(query));
+        
+        if (query.Length > MaxQueryLength)
+            throw new ArgumentException($"Query length cannot exceed {MaxQueryLength} characters", nameof(query));
+        
+        var trimmedQuery = query.Trim();
+        
+        if (!SafeQueryPattern.IsMatch(trimmedQuery))
+            throw new ArgumentException("Query contains potentially unsafe characters", nameof(query));
+        
+        return HttpUtility.HtmlEncode(trimmedQuery);
+    }
+
+    /// <summary>
+    /// Validates document ID format
+    /// </summary>
+    private static string ValidateDocumentId(string documentId)
+    {
+        if (string.IsNullOrWhiteSpace(documentId))
+            throw new ArgumentException("Document ID cannot be null or empty", nameof(documentId));
+        
+        if (documentId.Length > MaxDocumentIdLength)
+            throw new ArgumentException($"Document ID length cannot exceed {MaxDocumentIdLength} characters", nameof(documentId));
+        
+        if (!ValidDocumentIdPattern.IsMatch(documentId))
+            throw new ArgumentException("Document ID contains invalid characters", nameof(documentId));
+        
+        return documentId;
+    }
+
+    /// <summary>
+    /// Validates limit parameter
+    /// </summary>
+    private static int ValidateLimit(int limit)
+    {
+        if (limit <= 0)
+            throw new ArgumentException("Limit must be greater than 0", nameof(limit));
+        
+        if (limit > MaxLimitValue)
+            throw new ArgumentException($"Limit cannot exceed {MaxLimitValue}", nameof(limit));
+        
+        return limit;
+    }
+
+    /// <summary>
+    /// Safely constructs API URL
+    /// </summary>
+    private static string ConstructApiUrl(string baseUrl, string endpoint)
+    {
+        var normalizedBaseUrl = baseUrl.TrimEnd('/');
+        if (!normalizedBaseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Base URL must use HTTPS protocol for security");
+        }
+        return $"{normalizedBaseUrl}/api/{endpoint}";
+    }
+
+    /// <summary>
+    /// Creates a secure HTTP request with proper authorization
+    /// </summary>
+    private HttpRequestMessage CreateSecureRequest(HttpMethod method, string url, object? data = null)
+    {
+        var request = new HttpRequestMessage(method, url);
+        
+        if (!string.IsNullOrEmpty(_settings.ApiToken))
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _settings.ApiToken);
+        }
+        
+        if (data != null)
+        {
+            request.Content = JsonContent.Create(data, options: JsonOptions);
+        }
+        
+        return request;
+    }
+
+    /// <summary>
+    /// Validates configuration and returns sanitized error messages
+    /// </summary>
+    private string? ValidateConfiguration()
+    {
+        if (string.IsNullOrWhiteSpace(_settings.BaseUrl))
+        {
+            return "Configuration error: Base URL is not configured. Please set OUTLINE_BASE_URL environment variable.";
+        }
+        
+        if (string.IsNullOrWhiteSpace(_settings.ApiToken))
+        {
+            return "Configuration error: API token is not configured. Please set OUTLINE_API_TOKEN environment variable.";
+        }
+        
+        try
+        {
+            var uri = new Uri(_settings.BaseUrl);
+            if (uri.Scheme != "https")
+            {
+                return "Configuration error: Base URL must use HTTPS protocol.";
+            }
+        }
+        catch (UriFormatException)
+        {
+            return "Configuration error: Base URL format is invalid.";
+        }
+        
+        return null;
     }
 
     [McpServerTool, Description("Search for documents in the Outline documentation system")]
@@ -29,33 +152,36 @@ public class OutlineTools
     {
         try
         {
-            var baseUrl = _settings.BaseUrl;
-            var apiToken = _settings.ApiToken;
-            
-            if (string.IsNullOrEmpty(baseUrl))
-            {
-                return "Error: Base URL is not set. Please configure OUTLINE_BASE_URL environment variable or set it in the configuration.";
-            }
-            
-            if (string.IsNullOrEmpty(apiToken))
-            {
-                return "Error: API token is not set. Please configure OUTLINE_API_TOKEN environment variable or set it in the configuration.";
-            }
+            // Validate configuration
+            var configError = ValidateConfiguration();
+            if (configError != null)
+                return configError;
 
-            _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
+            // Validate and sanitize inputs
+            var sanitizedQuery = ValidateAndSanitizeQuery(query);
+            var validatedLimit = ValidateLimit(limit);
             
-            var searchUrl = $"{baseUrl}api/documents.search";
-            var searchData = new { query, limit };
+            var searchUrl = ConstructApiUrl(_settings.BaseUrl!, "documents.search");
+            var searchData = new { query = sanitizedQuery, limit = validatedLimit };
             
-            var response = await _httpClient.PostAsJsonAsync(searchUrl, searchData, JsonOptions);
+            using var request = CreateSecureRequest(HttpMethod.Post, searchUrl, searchData);
+            var response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
             
             var result = await response.Content.ReadAsStringAsync();
-            return $"Search results for '{query}': {result}";
+            return $"Search results for query: {result}";
         }
-        catch (Exception ex)
+        catch (ArgumentException ex)
         {
-            return $"Error searching documents: {ex.Message}";
+            return $"Invalid input: {ex.Message}";
+        }
+        catch (HttpRequestException)
+        {
+            return "Error: Unable to connect to Outline API. Please check your network connection and API configuration.";
+        }
+        catch (Exception)
+        {
+            return "Error: An unexpected error occurred while searching documents.";
         }
     }
 
@@ -64,33 +190,36 @@ public class OutlineTools
     {
         try
         {
-            var baseUrl = _settings.BaseUrl;
-            var apiToken = _settings.ApiToken;
-            
-            if (string.IsNullOrEmpty(baseUrl))
-            {
-                return "Error: Base URL is not set. Please configure OUTLINE_BASE_URL environment variable or set it in the configuration.";
-            }
-            
-            if (string.IsNullOrEmpty(apiToken))
-            {
-                return "Error: API token is not set. Please configure OUTLINE_API_TOKEN environment variable or set it in the configuration.";
-            }
+            // Validate configuration
+            var configError = ValidateConfiguration();
+            if (configError != null)
+                return configError;
 
-            _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
+            // Validate and sanitize inputs
+            var sanitizedQuery = ValidateAndSanitizeQuery(query);
+            var validatedLimit = ValidateLimit(limit);
             
-            var searchUrl = $"{baseUrl}api/documents.search";
-            var searchData = new { query, limit };
+            var searchUrl = ConstructApiUrl(_settings.BaseUrl!, "documents.search");
+            var searchData = new { query = sanitizedQuery, limit = validatedLimit };
             
-            var response = await _httpClient.PostAsJsonAsync(searchUrl, searchData, JsonOptions);
+            using var request = CreateSecureRequest(HttpMethod.Post, searchUrl, searchData);
+            var response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
             
             var result = await response.Content.ReadAsStringAsync();
-            return $"Wiki search results for '{query}': {result}";
+            return $"Wiki search results: {result}";
         }
-        catch (Exception ex)
+        catch (ArgumentException ex)
         {
-            return $"Error searching wiki: {ex.Message}";
+            return $"Invalid input: {ex.Message}";
+        }
+        catch (HttpRequestException)
+        {
+            return "Error: Unable to connect to Outline API. Please check your network connection and API configuration.";
+        }
+        catch (Exception)
+        {
+            return "Error: An unexpected error occurred while searching wiki.";
         }
     }
 
@@ -99,33 +228,35 @@ public class OutlineTools
     {
         try
         {
-            var baseUrl = _settings.BaseUrl;
-            var apiToken = _settings.ApiToken;
-            
-            if (string.IsNullOrEmpty(baseUrl))
-            {
-                return "Error: Base URL is not set. Please configure OUTLINE_BASE_URL environment variable or set it in the configuration.";
-            }
-            
-            if (string.IsNullOrEmpty(apiToken))
-            {
-                return "Error: API token is not set. Please configure OUTLINE_API_TOKEN environment variable or set it in the configuration.";
-            }
+            // Validate configuration
+            var configError = ValidateConfiguration();
+            if (configError != null)
+                return configError;
 
-            _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
+            // Validate document ID
+            var validatedDocumentId = ValidateDocumentId(documentId);
             
-            var documentUrl = $"{baseUrl}api/documents.info";
-            var documentData = new { id = documentId };
+            var documentUrl = ConstructApiUrl(_settings.BaseUrl!, "documents.info");
+            var documentData = new { id = validatedDocumentId };
             
-            var response = await _httpClient.PostAsJsonAsync(documentUrl, documentData, JsonOptions);
+            using var request = CreateSecureRequest(HttpMethod.Post, documentUrl, documentData);
+            var response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
             
             var result = await response.Content.ReadAsStringAsync();
-            return $"Document {documentId}: {result}";
+            return $"Document: {result}";
         }
-        catch (Exception ex)
+        catch (ArgumentException ex)
         {
-            return $"Error getting document: {ex.Message}";
+            return $"Invalid input: {ex.Message}";
+        }
+        catch (HttpRequestException)
+        {
+            return "Error: Unable to connect to Outline API. Please check your network connection and API configuration.";
+        }
+        catch (Exception)
+        {
+            return "Error: An unexpected error occurred while retrieving document.";
         }
     }
 
@@ -134,33 +265,45 @@ public class OutlineTools
     {
         try
         {
-            var baseUrl = _settings.BaseUrl;
-            var apiToken = _settings.ApiToken;
-            
-            if (string.IsNullOrEmpty(baseUrl))
-            {
-                return "Error: Base URL is not set. Please configure OUTLINE_BASE_URL environment variable or set it in the configuration.";
-            }
-            
-            if (string.IsNullOrEmpty(apiToken))
-            {
-                return "Error: API token is not set. Please configure OUTLINE_API_TOKEN environment variable or set it in the configuration.";
-            }
+            // Validate configuration
+            var configError = ValidateConfiguration();
+            if (configError != null)
+                return configError;
 
-            _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
+            // Validate inputs
+            var validatedLimit = ValidateLimit(limit);
             
-            var documentsUrl = $"{baseUrl}api/documents.list";
-            var documentsData = new { limit, sort, starred };
+            // Validate sort parameter if provided
+            if (!string.IsNullOrEmpty(sort))
+            {
+                var allowedSortValues = new[] { "createdAt", "updatedAt", "title", "index" };
+                if (!allowedSortValues.Contains(sort, StringComparer.OrdinalIgnoreCase))
+                {
+                    return "Invalid input: Sort parameter must be one of: createdAt, updatedAt, title, index";
+                }
+            }
             
-            var response = await _httpClient.PostAsJsonAsync(documentsUrl, documentsData, JsonOptions);
+            var documentsUrl = ConstructApiUrl(_settings.BaseUrl!, "documents.list");
+            var documentsData = new { limit = validatedLimit, sort, starred };
+            
+            using var request = CreateSecureRequest(HttpMethod.Post, documentsUrl, documentsData);
+            var response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
             
             var result = await response.Content.ReadAsStringAsync();
             return $"Documents list: {result}";
         }
-        catch (Exception ex)
+        catch (ArgumentException ex)
         {
-            return $"Error listing documents: {ex.Message}";
+            return $"Invalid input: {ex.Message}";
+        }
+        catch (HttpRequestException)
+        {
+            return "Error: Unable to connect to Outline API. Please check your network connection and API configuration.";
+        }
+        catch (Exception)
+        {
+            return "Error: An unexpected error occurred while listing documents.";
         }
     }
 
@@ -169,33 +312,35 @@ public class OutlineTools
     {
         try
         {
-            var baseUrl = _settings.BaseUrl;
-            var apiToken = _settings.ApiToken;
-            
-            if (string.IsNullOrEmpty(baseUrl))
-            {
-                return "Error: Base URL is not set. Please configure OUTLINE_BASE_URL environment variable or set it in the configuration.";
-            }
-            
-            if (string.IsNullOrEmpty(apiToken))
-            {
-                return "Error: API token is not set. Please configure OUTLINE_API_TOKEN environment variable or set it in the configuration.";
-            }
+            // Validate configuration
+            var configError = ValidateConfiguration();
+            if (configError != null)
+                return configError;
 
-            _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
+            // Validate inputs
+            var validatedLimit = ValidateLimit(limit);
             
-            var collectionsUrl = $"{baseUrl}api/collections.list";
-            var collectionsData = new { limit };
+            var collectionsUrl = ConstructApiUrl(_settings.BaseUrl!, "collections.list");
+            var collectionsData = new { limit = validatedLimit };
             
-            var response = await _httpClient.PostAsJsonAsync(collectionsUrl, collectionsData, JsonOptions);
+            using var request = CreateSecureRequest(HttpMethod.Post, collectionsUrl, collectionsData);
+            var response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
             
             var result = await response.Content.ReadAsStringAsync();
             return $"Collections list: {result}";
         }
-        catch (Exception ex)
+        catch (ArgumentException ex)
         {
-            return $"Error listing collections: {ex.Message}";
+            return $"Invalid input: {ex.Message}";
+        }
+        catch (HttpRequestException)
+        {
+            return "Error: Unable to connect to Outline API. Please check your network connection and API configuration.";
+        }
+        catch (Exception)
+        {
+            return "Error: An unexpected error occurred while listing collections.";
         }
     }
 }
